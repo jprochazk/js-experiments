@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Playground</title>
+</head>
+
+<body>
+<div id="root"></div>
+<script>
+const join = (strings, exprs) => {
+    let i = 0, j = 0, t = strings.length + exprs.length, s = true;
+    let out = "";
+    while (i+j<t) {
+        if (s) out += strings[i++];
+        else out += String(exprs[i++]);
+        s = !s;
+    }
+    return out;
+}
+const escape = (v) => v.replace(/"/g, "\\x27").replace(/'/g, "\\x22");
+const html = (strings, ...exprs) => {
+    const content = escape(join(strings, exprs));
+    // match all `{{EXPR}}`
+    const bindings = [...content.matchAll(/\{\{([^{}]*)\}\}/g)];
+    // split the string on each `{{EXPR}}`, forming fragments
+    // e.g. `Time is ${this.time} (${this.timezone})` is split into
+    // ["Time: ", " (", ")"]
+    const fragments = [];
+    for (let i = 0; i < bindings.length + 1; ++i) {
+        let start = 0, end = content.length;
+        if (bindings[i - 1]) start = bindings[i - 1].index + bindings[i - 1][0].length;
+        if (bindings[i]) end = bindings[i].index;
+        fragments.push(content.substring(start, end));
+    }
+    // the fragments and bindings are then interleaved back together
+    // forming a complete expression in the format
+    // `fragments[0]`+String(bindings[0])+`fragments[1]`+String(bindings[1]) ... etc
+    let output = [];
+    let i = 0, j = 0, t = fragments.length + bindings.length, s = true;
+    while (i+j<t) {
+        if (s) output.push(`\`${fragments[i++]}\``);
+        else output.push(`String(${bindings[j++][1]})`);
+        s = !s;
+    }
+    // the final expression is put into a function, resulting in something like
+    // function anonymous() {
+    //   return `Time is `+String(this.time)+` (`+String(this.timezone)+`)`;
+    // }
+    // the internal `this` is the bound to a `model`. Calling the function
+    // produces a new string each time with up-to-date values from the `model`.
+    return new Function(`return ${output.join("+")}`);
+}
+const model = (schema) => {
+    // the model just takes each key/value pair,
+    // creating a getter and setter for the `key`
+    // with the default value set to `value`.
+    // each time the setter is executed, it also
+    // triggers an `update`, which notifies all
+    // subscribers that the value has changed
+    const data = {};
+    const subscribers = new Set;
+    const update = () => {
+        for (const callback of subscribers.values()) {
+            callback();
+        }
+    }
+    const out = {
+        subscribe(cb) {
+            subscribers.add(cb);
+        },
+        unsubscribe(cb) {
+            subscribers.delete(cb);
+        }
+    };
+    for (const key of Object.keys(schema)) {
+        data[key] = schema[key];
+        Object.defineProperty(out, key, {
+            get() { return data[key]; },
+            set(v) { data[key] = v; update(); }
+        });
+    }
+    return out;
+}
+
+const root = document.getElementById("root");
+
+const data = model({ value: "00:00:00" });
+const view = html`<span>Time: {{this.value}} ...</span>`.bind(data);
+const render = () => root.innerHTML = view();
+
+data.subscribe(render);
+setInterval(() => {
+    const now = new Date(Date.now());
+    const s = (v) => v.toString().padStart(2, "0");
+    const hours = s(now.getHours());
+    const minutes = s(now.getMinutes());
+    const seconds = s(now.getSeconds());
+    data.value = `${hours}:${minutes}:${seconds}`;
+}, 1000);
+render();
+</script>
+</body>
+
+</html>

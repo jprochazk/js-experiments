@@ -1,0 +1,10 @@
+{
+  "main": "server.js",
+  "scripts": {
+    "start": "node ."
+  },
+  "dependencies": {
+    "open": "^8.2.1",
+    "websocket": "^1.0.34"
+  }
+}
